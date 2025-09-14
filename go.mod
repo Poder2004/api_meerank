@@ -1,6 +1,6 @@
 module meerank
 
-go 1.25.1
+go 1.25.0
 
 require gorm.io/driver/mysql v1.6.0
 

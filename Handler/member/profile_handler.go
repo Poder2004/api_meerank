@@ -24,14 +24,7 @@ func GetMyProfileHandler(c *gin.Context, db *gorm.DB) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"name":   user.Name,
-		"phone":  user.Phone,
-		"age":    user.Age,
-		"gender": user.Gender,
-		"score":  user.Score,  // <-- เพิ่ม
-		"minute": user.Minute, // <-- เพิ่ม
-	})
+	c.JSON(http.StatusOK, user)
 }
 
 // UpdateMyProfileHandler อัปเดตข้อมูลโปรไฟล์ของ user ที่ล็อกอินอยู่
@@ -144,4 +137,63 @@ func AddTreeHandler(c *gin.Context, db *gorm.DB) {
 
 	// 3. ตอบกลับว่าสำเร็จ
 	c.JSON(http.StatusOK, gin.H{"message": "Tree count updated successfully"})
+}
+
+func WaterTreeHandler(c *gin.Context, db *gorm.DB) {
+	// ✨ 2. เปลี่ยน userID ที่ดึงมาจาก c.Get() ให้เป็น "uid" ✨
+	userID, exists := c.Get("uid")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found in token"})
+		return
+	}
+
+	var payload struct {
+		Amount int `json:"amount"`
+	}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+		return
+	}
+
+	if payload.Amount <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Amount must be positive"})
+		return
+	}
+
+	var user model.User
+	// ✨ 3. เปลี่ยน h.DB เป็น db ✨
+	if err := db.First(&user, "uid = ?", userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	if user.Score < payload.Amount {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Not enough score"})
+		return
+	}
+
+	tx := db.Begin()
+
+	user.Score -= payload.Amount
+	user.TreeProgress += payload.Amount
+
+	if user.TreeProgress >= 6000 {
+		user.NumberTree += 1
+		user.TreeProgress -= 6000
+	}
+
+	if err := tx.Save(&user).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user data"})
+		return
+	}
+
+	tx.Commit()
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":       "Tree watered successfully",
+		"new_score":     user.Score,
+		"tree_progress": user.TreeProgress,
+		"number_tree":   user.NumberTree,
+	})
 }

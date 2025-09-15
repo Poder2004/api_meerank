@@ -43,6 +43,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB) {
 		profileGroup.POST("/activity", func(c *gin.Context) { handlers.UpdateUserActivityHandler(c, db) })
 		// POST /profile/tree
 		profileGroup.POST("/tree", func(c *gin.Context) { handlers.AddTreeHandler(c, db) })
+		profileGroup.POST("/tree/water", func(c *gin.Context) { handlers.WaterTreeHandler(c, db) })
 
 	}
 

@@ -1,0 +1,9 @@
+# ไฟล์ Environment (มีความลับ)
+.env
+
+# ไฟล์ Key ของ Firebase (มีความลับสูง)
+*.json
+
+# ไฟล์ Binary ที่ build แล้ว (ไม่จำเป็น)
+main
+main.exe

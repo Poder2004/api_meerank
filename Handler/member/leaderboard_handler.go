@@ -12,8 +12,8 @@ import (
 )
 
 // LeaderboardEntry struct สำหรับข้อมูลที่จะส่งกลับไป
+// ✨ แก้ไข: เอา Rank ออก เพราะ Frontend จะเป็นคนจัดการลำดับเอง
 type LeaderboardEntry struct {
-	Rank       int    `json:"rank"`
 	Name       string `json:"name"`
 	NumberTree int    `json:"number_tree"`
 	Score      int    `json:"score"`
@@ -25,16 +25,16 @@ func GetLeaderboardHandler(c *gin.Context, client *firestore.Client) {
 	var leaderboard []LeaderboardEntry
 
 	// 1. สร้าง Query เพื่อดึงข้อมูลผู้ใช้ 10 อันดับแรก
-	// โดยเรียงจากจำนวนต้นไม้ (มากไปน้อย) และตามด้วยคะแนน (มากไปน้อย)
+	// ✨ เพิ่ม .Where(...) เพื่อกรองเอาเฉพาะ member เท่านั้น
 	iter := client.Collection(models.CollectionUsers).
+		Where("role", "==", models.RoleMember). // <-- เพิ่มบรรทัดนี้
 		OrderBy("number_tree", firestore.Desc).
 		OrderBy("score", firestore.Desc).
 		Limit(10).
 		Documents(ctx)
 	defer iter.Stop()
 
-	// 2. วนลูปเพื่ออ่านข้อมูลและสร้างผลลัพธ์
-	rank := 1
+	// 2. วนลูปเพื่ออ่านข้อมูลและสร้างผลลัพธ์ (ไม่ต้องนับ Rank แล้ว)
 	for {
 		doc, err := iter.Next()
 		if err == iterator.Done {
@@ -49,17 +49,14 @@ func GetLeaderboardHandler(c *gin.Context, client *firestore.Client) {
 		var user models.User
 		if err := doc.DataTo(&user); err != nil {
 			log.Printf("Failed to convert user data for leaderboard: %v", err)
-			// ข้าม user ที่มีปัญหาไป
 			continue
 		}
 
 		leaderboard = append(leaderboard, LeaderboardEntry{
-			Rank:       rank,
 			Name:       user.Name,
 			NumberTree: user.NumberTree,
 			Score:      user.Score,
 		})
-		rank++
 	}
 
 	// 3. ส่งข้อมูลที่ได้กลับไปให้ Frontend

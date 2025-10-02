@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"meerank/models"
 	"net/http"
@@ -104,4 +105,65 @@ func GetFullUserProfileHandler(c *gin.Context, client *firestore.Client) {
 
 	// 4. ส่งข้อมูลทั้งหมดกลับไป
 	c.JSON(http.StatusOK, user)
+}
+
+// ResetAllUsersStatsHandler รีเซ็ตค่า minute, score, number_tree, tree_progress ของผู้ใช้ทุกคนให้เป็น 0
+func ResetAllUsersStatsHandler(c *gin.Context, client *firestore.Client) {
+	ctx := context.Background()
+	userCount := 0
+
+	// ✨ ใช้ Batched Writes เพื่อประสิทธิภาพสูงสุดในการอัปเดตข้อมูลจำนวนมาก
+	batch := client.Batch()
+
+	// 1. ดึงข้อมูลผู้ใช้ทั้งหมดใน Collection "users"
+	iter := client.Collection(models.CollectionUsers).Documents(ctx)
+	defer iter.Stop()
+
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			log.Printf("Failed to iterate users for reset: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user data"})
+			return
+		}
+
+		// 2. เตรียมข้อมูลที่จะอัปเดต
+		updates := []firestore.Update{
+			{Path: "minute", Value: 0},
+			{Path: "score", Value: 0},
+			{Path: "number_tree", Value: 0},
+			{Path: "tree_progress", Value: 0},
+		}
+
+		// 3. เพิ่ม Operation การอัปเดตเข้าไปใน Batch
+		batch.Update(doc.Ref, updates)
+		userCount++
+
+		// Firestore Batched Writes มีขีดจำกัดที่ 500 operations ต่อครั้ง
+		// หากมีผู้ใช้จำนวนมาก เราจะ commit ทุกๆ 500 คน แล้วเริ่ม batch ใหม่
+		if userCount%500 == 0 {
+			if _, err := batch.Commit(ctx); err != nil {
+				log.Printf("Batch commit failed during reset: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user stats"})
+				return
+			}
+			// เริ่ม Batch ใหม่สำหรับรอบต่อไป
+			batch = client.Batch()
+		}
+	}
+
+	// 4. Commit Batch สุดท้าย (สำหรับผู้ใช้ที่เหลือที่ยังไม่ถึง 500)
+	if _, err := batch.Commit(ctx); err != nil {
+		log.Printf("Final batch commit failed during reset: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to finalize updating user stats"})
+		return
+	}
+
+	// 5. ส่งคำตอบกลับเมื่อสำเร็จ
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("Successfully reset stats for %d users.", userCount),
+	})
 }

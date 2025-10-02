@@ -55,5 +55,9 @@ func SetupRouter(r *gin.Engine, client *firestore.Client) {
 		adminGroup.GET("/users/:uid", func(c *gin.Context) {
 			handlersadmin.GetFullUserProfileHandler(c, client)
 		})
+
+		adminGroup.POST("/users/reset-stats", func(c *gin.Context) {
+			handlersadmin.ResetAllUsersStatsHandler(c, client)
+		})
 	}
 }

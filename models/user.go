@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 // User struct สำหรับเก็บข้อมูลใน Firestore
 type User struct {
 	// เปลี่ยน UID เป็น ID ชนิด string และใช้ firestore tag
@@ -13,7 +15,8 @@ type User struct {
 	NumberTree   int     `firestore:"number_tree" json:"number_tree"`
 	TreeProgress int     `firestore:"tree_progress" json:"tree_progress"`
 	Role         string  `firestore:"role" json:"role"`
-	// Password   string  `firestore:"-" json:"-"` // ไม่มี password อีกต่อไป
+	LastLoginAt *time.Time `firestore:"last_login_at,omitempty" json:"last_login_at,omitempty"`
+
 }
 
 // --- Constants ---

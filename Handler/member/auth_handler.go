@@ -82,7 +82,7 @@ func RegisterHandler(c *gin.Context, client *firestore.Client) {
 
 // --- Login Handler (สำหรับ Firebase) ---
 
-// LoginHandler จัดการการล็อกอินด้วยเบอร์โทรศัพท์เท่านั้น
+// LoginHandler จัดการการล็อกอิน, คำนวณวัน, และอัปเดตเวลาล่าสุด
 func LoginHandler(c *gin.Context, client *firestore.Client) {
 	// 1. รับข้อมูลจาก JSON payload (มีแค่เบอร์โทร)
 	var payload struct {
@@ -104,7 +104,7 @@ func LoginHandler(c *gin.Context, client *firestore.Client) {
 	defer iter.Stop()
 
 	doc, err := iter.Next()
-	if err == iterator.Done { // ถ้าไม่เจอข้อมูล
+	if err == iterator.Done {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Phone number not found"})
 		return
 	}
@@ -114,18 +114,47 @@ func LoginHandler(c *gin.Context, client *firestore.Client) {
 		return
 	}
 
-	// แปลงข้อมูลจาก Firestore document ไปยัง struct User
 	if err := doc.DataTo(&user); err != nil {
 		log.Printf("Error converting user data: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
 		return
 	}
-	docID = doc.Ref.ID // <-- เก็บ Document ID ของ Firestore
+	docID = doc.Ref.ID
 
-	// 3. สร้าง JWT Token (ไม่มีการเปรียบเทียบรหัสผ่าน)
-	expirationTime := time.Now().Add(24 * time.Hour) // Token หมดอายุใน 24 ชั่วโมง
+	// --- V V V ส่วนที่เพิ่มเข้ามา V V V ---
+
+	// 3. คำนวณจำนวนวันที่ไม่ได้ล็อกอิน
+	var daysSinceLastLogin int
+	now := time.Now()
+
+	if user.LastLoginAt == nil {
+		// ถ้าไม่เคยมีประวัติการล็อกอินเลย (ครั้งแรก) ให้ถือว่าเป็น 0 วัน
+		daysSinceLastLogin = 0
+	} else {
+		// คำนวณโดยใช้เฉพาะวันที่ (ไม่สนใจเวลา) เพื่อความแม่นยำ
+		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		lastLoginDay := time.Date(user.LastLoginAt.Year(), user.LastLoginAt.Month(), user.LastLoginAt.Day(), 0, 0, 0, 0, user.LastLoginAt.Location())
+
+		duration := today.Sub(lastLoginDay)
+		daysSinceLastLogin = int(duration.Hours() / 24)
+	}
+
+	// 4. อัปเดตเวลาล็อกอินล่าสุดใน Firestore ให้เป็นเวลาปัจจุบัน
+	// ทำขั้นตอนนี้หลังจากคำนวณเสร็จแล้ว
+	updateData := []firestore.Update{
+		{Path: "last_login_at", Value: now},
+	}
+	if _, err := doc.Ref.Update(ctx, updateData); err != nil {
+		// บันทึก error แต่ไม่ต้องหยุดการทำงาน เพื่อให้ผู้ใช้ยังล็อกอินได้
+		log.Printf("Failed to update last login time for user %s: %v", docID, err)
+	}
+
+	// --- ^ ^ ^ สิ้นสุดส่วนที่เพิ่มเข้ามา ^ ^ ^ ---
+
+	// 5. สร้าง JWT Token
+	expirationTime := time.Now().Add(12 * time.Hour)
 	claims := &Claims{
-		UserID: docID, // ใช้ Document ID ของ Firestore เป็น UserID ใน token
+		UserID: docID,
 		Role:   user.Role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
@@ -139,11 +168,12 @@ func LoginHandler(c *gin.Context, client *firestore.Client) {
 		return
 	}
 
-	// 4. ส่งคำตอบกลับพร้อม Token
+	// 6. ส่งคำตอบกลับพร้อม Token และจำนวนวันที่ไม่ได้ล็อกอิน
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Login successful",
-		"name":    user.Name,
-		"token":   tokenString,
-		"role":    user.Role,
+		"message":               "Login successful",
+		"name":                  user.Name,
+		"token":                 tokenString,
+		"role":                  user.Role,
+		"days_since_last_login": daysSinceLastLogin, // <-- เพิ่มค่านี้เข้าไปใน response
 	})
 }

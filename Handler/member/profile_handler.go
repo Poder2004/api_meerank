@@ -235,9 +235,9 @@ func WaterTreeHandler(c *gin.Context, client *firestore.Client) {
 		user.Score -= payload.Amount
 		user.TreeProgress += payload.Amount
 
-		if user.TreeProgress >= 6000 {
+		if user.TreeProgress >= 1000 {
 			user.NumberTree += 1
-			user.TreeProgress -= 6000
+			user.TreeProgress -= 1000
 		}
 
 		// เก็บข้อมูลล่าสุดเพื่อส่งกลับ
